@@ -40,13 +40,15 @@ class GuildMusicPlayer {
 
   // ── Connection ─────────────────────────────────────────────────────────────
 
-    async join(voiceChannel) {
+      async join(voiceChannel) {
     console.log(`[Voice][${this.guild.id}] joining ${voiceChannel.id}`);
 
     this.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: voiceChannel.guild.id,
       adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+      selfDeaf: false,
+      selfMute: false,
     });
 
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
@@ -66,12 +68,12 @@ class GuildMusicPlayer {
     this.connection.subscribe(this.player);
 
     try {
-      await entersState(this.connection, VoiceConnectionStatus.Ready, 20_000);
+      await entersState(this.connection, VoiceConnectionStatus.Ready, 40_000);
       console.log(`[Voice][${this.guild.id}] connection is Ready`);
     } catch (err) {
-      console.error(`[Voice][${this.guild.id}] failed to enter Ready state:`, err);
-      this.destroy();
-      throw err;
+      // IMPORTANTE: ya no lanzamos ni destruimos aquí,
+      // solo avisamos y dejamos que la conexión intente seguir.
+      console.warn(`[Voice][${this.guild.id}] not Ready after 40s, will try to play anyway:`, err);
     }
   }
 
@@ -115,12 +117,15 @@ class GuildMusicPlayer {
 
     try {
       const url = await getSongUrl(this.currentSong);
+      console.log(`[Player][${this.guild.id}] Playing URL: ${url}`);
+
       const resource = createAudioResource(url, {
         inputType: StreamType.Arbitrary,
         inlineVolume: true,
       });
       resource.volume?.setVolume(0.8);
       this.player.play(resource);
+      console.log(`[Player][${this.guild.id}] Resource started`);
 
       const title = this.currentSong.title || 'Desconocido';
       const artist = this.currentSong.artist || 'Desconocido';
