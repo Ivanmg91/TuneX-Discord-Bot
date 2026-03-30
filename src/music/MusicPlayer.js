@@ -40,7 +40,9 @@ class GuildMusicPlayer {
 
   // ── Connection ─────────────────────────────────────────────────────────────
 
-  async join(voiceChannel) {
+    async join(voiceChannel) {
+    console.log(`[Voice][${this.guild.id}] joining ${voiceChannel.id}`);
+
     this.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: voiceChannel.guild.id,
@@ -48,18 +50,29 @@ class GuildMusicPlayer {
     });
 
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      console.warn(`[Voice][${this.guild.id}] disconnected, trying to recover...`);
       try {
         await Promise.race([
           entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
           entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000),
         ]);
+        console.log(`[Voice][${this.guild.id}] reconnected after disconnect.`);
       } catch {
+        console.warn(`[Voice][${this.guild.id}] could not reconnect, destroying connection.`);
         this.destroy();
       }
     });
 
     this.connection.subscribe(this.player);
-    await entersState(this.connection, VoiceConnectionStatus.Ready, 20_000);
+
+    try {
+      await entersState(this.connection, VoiceConnectionStatus.Ready, 20_000);
+      console.log(`[Voice][${this.guild.id}] connection is Ready`);
+    } catch (err) {
+      console.error(`[Voice][${this.guild.id}] failed to enter Ready state:`, err);
+      this.destroy();
+      throw err;
+    }
   }
 
   // ── Playback ───────────────────────────────────────────────────────────────
