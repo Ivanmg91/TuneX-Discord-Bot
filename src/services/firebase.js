@@ -73,7 +73,9 @@ async function searchSongs(query) {
   // 1. Prefix search on `title`.
   // '\uf8ff' is a very high Unicode character that acts as an upper-bound
   // for Firestore prefix queries — any string starting with `q` will be ≤ `q\uf8ff`.
-  // Song titles in TuneX are stored in lowercase, so lowercasing the query matches.
+  // NOTE: Firestore range queries are case-sensitive. TuneX stores titles in
+  // lowercase (e.g. "mamamovilalcielo"), and we lowercase the query here, so
+  // searches match as long as titles are saved in lowercase in Firestore.
   const titleSnap = await songsRef
     .where('title', '>=', q)
     .where('title', '<=', q + '\uf8ff')
@@ -106,7 +108,8 @@ function normalizeSong(doc) {
   return {
     id: doc.id,
     ...data,
-    // Map TuneX field names → bot field names
+    // Map TuneX field names → bot field names.
+    // `artistName` is the TuneX field; `artist` fallback covers any future migration.
     artist: data.artistName || data.artist || 'Desconocido',
     coverUrl: data.imageUrl || data.coverUrl || null,
   };
