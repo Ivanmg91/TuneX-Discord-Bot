@@ -1,0 +1,24 @@
+version: '3.9'
+
+services:
+  bot:
+    build: .
+    image: tunex-discord-bot
+    container_name: tunex-bot
+    restart: unless-stopped
+
+    # All secrets come from a .env file (never committed to git)
+    env_file:
+      - .env
+
+    # Mount the Firebase service-account JSON as a read-only file.
+    # Place the file next to docker-compose.yml and name it serviceAccountKey.json
+    volumes:
+      - ./serviceAccountKey.json:/app/serviceAccountKey.json:ro
+
+    # Optional: write logs to a file on the host
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
