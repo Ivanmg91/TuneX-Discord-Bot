@@ -1,7 +1,7 @@
 # ── Stage 1: build native addons ─────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
-# Build tools needed for native Node modules (sodium-native, @discordjs/opus)
+# Build tools needed for native Node modules (sodium-native)
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
