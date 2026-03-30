@@ -42,22 +42,24 @@ function initFirebase() {
 /**
  * Search songs in Firestore.
  *
- * The bot supports two strategies:
- *  1. Prefix search on `titleLower` (fast, no extra index needed).
- *  2. Prefix search on `artistLower` as fallback.
+ * Supports two strategies:
+ *  1. Prefix search on `title` (case-insensitive by lowercasing the query).
+ *  2. Prefix search on `artistName` as fallback.
  *
- * Expected Firestore document structure:
+ * Firestore document structure (TuneX app):
  * {
- *   title:        "Song Name",
- *   titleLower:   "song name",      // lowercase copy – needed for search
- *   artist:       "Artist Name",
- *   artistLower:  "artist name",    // lowercase copy – needed for search
- *   album:        "Album",          // optional
- *   duration:     "3:45",           // optional, human-readable string
- *   audioUrl:     "https://…",      // direct public/signed URL   – OR –
- *   storagePath:  "songs/file.mp3", // Firebase Storage path
- *   coverUrl:     "https://…",      // optional cover art
- *   genre:        "Rock",           // optional
+ *   id:          "1770324973876",
+ *   title:       "mamamovilalcielo",
+ *   artistName:  "chakal",
+ *   artistId:    "…",
+ *   artistEmail: "…",
+ *   audioUrl:    "https://firebasestorage.googleapis.com/…",
+ *   imageUrl:    "https://firebasestorage.googleapis.com/…",
+ *   likes:       0,
+ *   likedBy:     [],
+ *   lyrics:      "",
+ *   presetUrl:   "",
+ *   uploadedAt:  Timestamp,
  * }
  *
  * @param {string} query
@@ -68,27 +70,49 @@ async function searchSongs(query) {
   const collection = process.env.FIREBASE_SONGS_COLLECTION || 'songs';
   const songsRef = db.collection(collection);
 
-  // 1. Prefix search on titleLower
-  // '\uf8ff' is a very high Unicode character that serves as an upper-bound
+  // 1. Prefix search on `title`.
+  // '\uf8ff' is a very high Unicode character that acts as an upper-bound
   // for Firestore prefix queries — any string starting with `q` will be ≤ `q\uf8ff`.
+  // NOTE: Firestore range queries are case-sensitive. TuneX stores titles in
+  // lowercase (e.g. "mamamovilalcielo"), and we lowercase the query here, so
+  // searches match as long as titles are saved in lowercase in Firestore.
   const titleSnap = await songsRef
-    .where('titleLower', '>=', q)
-    .where('titleLower', '<=', q + '\uf8ff')
+    .where('title', '>=', q)
+    .where('title', '<=', q + '\uf8ff')
     .limit(10)
     .get();
 
   if (!titleSnap.empty) {
-    return titleSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return titleSnap.docs.map((doc) => normalizeSong(doc));
   }
 
-  // 2. Fallback: prefix search on artistLower
+  // 2. Fallback: prefix search on `artistName`
   const artistSnap = await songsRef
-    .where('artistLower', '>=', q)
-    .where('artistLower', '<=', q + '\uf8ff')
+    .where('artistName', '>=', q)
+    .where('artistName', '<=', q + '\uf8ff')
     .limit(10)
     .get();
 
-  return artistSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return artistSnap.docs.map((doc) => normalizeSong(doc));
+}
+
+/**
+ * Normalize a Firestore document snapshot to the shape the bot expects.
+ * Maps TuneX-specific field names to the bot's internal field names.
+ *
+ * @param {import('firebase-admin').firestore.DocumentSnapshot} doc
+ * @returns {Object}
+ */
+function normalizeSong(doc) {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    ...data,
+    // Map TuneX field names → bot field names.
+    // `artistName` is the TuneX field; `artist` fallback covers any future migration.
+    artist: data.artistName || data.artist || 'Desconocido',
+    coverUrl: data.imageUrl || data.coverUrl || null,
+  };
 }
 
 /**
