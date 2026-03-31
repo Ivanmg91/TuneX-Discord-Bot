@@ -8,9 +8,10 @@ const {
   VoiceConnectionStatus,
   StreamType,
   entersState,
-  getVoiceConnection,
 } = require('@discordjs/voice');
 const { getSongUrl } = require('../services/firebase');
+const prism = require('prism-media');
+const { request } = require('undici');
 
 // ─── Per-Guild Player ────────────────────────────────────────────────────────
 
@@ -41,41 +42,53 @@ class GuildMusicPlayer {
   // ── Connection ─────────────────────────────────────────────────────────────
 
       async join(voiceChannel) {
-    console.log(`[Voice][${this.guild.id}] joining ${voiceChannel.id}`);
+        console.log(`[Voice][${this.guild.id}] joining ${voiceChannel.id}`);
 
-    this.connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: false,
-      selfMute: false,
-    });
+        // Si hay una conexión previa, destrúyela para evitar estados raros.
+        if (this.connection) {
+          try { this.connection.destroy(); } catch {}
+          this.connection = null;
+        }
 
-    this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      console.warn(`[Voice][${this.guild.id}] disconnected, trying to recover...`);
-      try {
-        await Promise.race([
-          entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
-          entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000),
-        ]);
-        console.log(`[Voice][${this.guild.id}] reconnected after disconnect.`);
-      } catch {
-        console.warn(`[Voice][${this.guild.id}] could not reconnect, destroying connection.`);
-        this.destroy();
+        this.connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: voiceChannel.guild.id,
+          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+          selfDeaf: false,
+          selfMute: false,
+        });
+
+        this.connection.on('stateChange', (oldState, newState) => {
+          console.log(`[Voice][${this.guild.id}] state ${oldState.status} -> ${newState.status}`);
+        });
+
+        this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
+          console.warn(`[Voice][${this.guild.id}] disconnected, trying to recover...`);
+          try {
+            await Promise.race([
+              entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
+              entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000),
+            ]);
+            console.log(`[Voice][${this.guild.id}] recovered from disconnect.`);
+          } catch {
+            console.warn(`[Voice][${this.guild.id}] could not recover, destroying.`);
+            this.destroy();
+          }
+        });
+
+        this.connection.subscribe(this.player);
+
+        // Espera más tiempo. Si aun así no llega a Ready, lo tratamos como fallo.
+        try {
+          await entersState(this.connection, VoiceConnectionStatus.Ready, 60_000);
+          console.log(`[Voice][${this.guild.id}] connection is Ready`);
+        } catch (err) {
+          console.error(`[Voice][${this.guild.id}] failed to enter Ready state:`, err);
+          // Aquí SÍ destruimos y lanzamos: si no está Ready, no va a sonar nunca.
+          this.destroy();
+          throw err;
+        }
       }
-    });
-
-    this.connection.subscribe(this.player);
-
-    try {
-      await entersState(this.connection, VoiceConnectionStatus.Ready, 40_000);
-      console.log(`[Voice][${this.guild.id}] connection is Ready`);
-    } catch (err) {
-      // IMPORTANTE: ya no lanzamos ni destruimos aquí,
-      // solo avisamos y dejamos que la conexión intente seguir.
-      console.warn(`[Voice][${this.guild.id}] not Ready after 40s, will try to play anyway:`, err);
-    }
-  }
 
   // ── Playback ───────────────────────────────────────────────────────────────
 
@@ -93,7 +106,12 @@ class GuildMusicPlayer {
     const isIdle = this.player.state.status === AudioPlayerStatus.Idle;
 
     if (!this.connection) {
-      await this.join(voiceChannel);
+      try {
+        await this.join(voiceChannel);
+      } catch (e) {
+        this._send('❌ No puedo conectarme al canal de voz (conexión no llegó a READY).');
+        throw e;
+      }
     }
 
     if (isIdle) {
@@ -119,8 +137,25 @@ class GuildMusicPlayer {
       const url = await getSongUrl(this.currentSong);
       console.log(`[Player][${this.guild.id}] Playing URL: ${url}`);
 
-      const resource = createAudioResource(url, {
-        inputType: StreamType.Arbitrary,
+      const { body } = await request(url);
+
+      // FFmpeg: MP3/lo-que-sea -> PCM 48kHz stereo
+      const ffmpeg = new prism.FFmpeg({
+        args: [
+          '-analyzeduration', '0',
+          '-loglevel', '0',
+          '-i', 'pipe:0',
+          '-f', 's16le',
+          '-ar', '48000',
+          '-ac', '2',
+        ],
+      });
+
+      const pcmStream = body.pipe(ffmpeg);
+
+      // Crea recurso como RAW PCM
+      const resource = createAudioResource(pcmStream, {
+        inputType: StreamType.Raw,
         inlineVolume: true,
       });
       resource.volume?.setVolume(0.8);
