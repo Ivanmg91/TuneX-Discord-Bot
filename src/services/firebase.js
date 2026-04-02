@@ -8,7 +8,7 @@ let storage;
 let initialized = false;
 const DEFAULT_TITLE_FIELDS = ['title', 'songName', 'name', 'nombre'];
 const DEFAULT_ARTIST_FIELDS = ['artistName', 'artist'];
-const LOWERCASE_FIELD_SUFFIX = /Lower$/;
+const LOWERCASE_FIELD_REGEX = /Lower$/;
 
 /**
  * Initialise Firebase Admin SDK.
@@ -128,7 +128,7 @@ function prefixSearchByField(songsRef, field, q) {
  * @returns {string[]}
  */
 function getSearchTerms(field, rawQuery, normalizedQuery) {
-  if (LOWERCASE_FIELD_SUFFIX.test(field)) {
+  if (LOWERCASE_FIELD_REGEX.test(field)) {
     return [normalizedQuery];
   }
   return rawQuery === normalizedQuery ? [rawQuery] : [rawQuery, normalizedQuery];
