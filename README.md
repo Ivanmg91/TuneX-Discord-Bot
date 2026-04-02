@@ -139,8 +139,8 @@ Cada documento debe tener estos campos:
 
 | Campo | Tipo | Obligatorio | Descripción |
 |---|---|---|---|
-| `title` | string | ✅ | Nombre de la canción |
-| `titleLower` | string | ✅ | `title` en minúsculas — **necesario para la búsqueda** |
+| `title` | string | ✅ | Nombre de la canción (por defecto, campo de búsqueda principal) |
+| `titleLower` | string | — | Campo legado opcional |
 | `artist` | string | — | Nombre del artista |
 | `artistLower` | string | — | `artist` en minúsculas — para búsqueda por artista |
 | `album` | string | — | Álbum |
@@ -170,9 +170,19 @@ Cada documento debe tener estos campos:
 
 ### Adaptar el bot a tu app existente
 
-Si tu app ya guarda canciones con nombres de campo distintos, edita el archivo `src/services/firebase.js`:
+Si tu app ya guarda canciones con nombres de campo distintos, el bot ya soporta múltiples nombres comunes:
 
-- Función `searchSongs`: cambia `titleLower` / `artistLower` por tus nombres de campo.
+- Título: `title`, `songName`, `name`, `nombre`
+- Artista: `artistName`, `artist`
+
+También puedes personalizar estos campos por variables de entorno:
+
+- `FIREBASE_SONG_TITLE_FIELDS=title,songName,name,nombre`
+- `FIREBASE_SONG_ARTIST_FIELDS=artistName,artist`
+
+Si necesitas más ajustes, edita `src/services/firebase.js`:
+
+- Función `searchSongs`: adapta los campos de búsqueda.
 - Función `getSongUrl`: añade los nombres de campo donde se guarda la URL.
 
 ---
@@ -347,8 +357,8 @@ npm start
 
 ### La búsqueda no encuentra canciones
 
-- Asegúrate de que el campo `titleLower` existe y contiene el título en minúsculas.
-- En Firestore Console → colección `songs`, verifica que los documentos tienen ese campo.
+- Verifica que tus documentos tengan alguno de los campos configurados en `FIREBASE_SONG_TITLE_FIELDS` (por defecto: `title,songName,name,nombre`).
+- Si tus campos usan otro nombre, configúralo en `.env`.
 
 ### `Error: spawn ffmpeg ENOENT`
 
