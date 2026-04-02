@@ -69,7 +69,8 @@ function initFirebase() {
  */
 async function searchSongs(query) {
   if (!query?.trim()) return [];
-  const q = query.toLowerCase().trim();
+  const rawQuery = query.trim();
+  const normalizedQuery = rawQuery.toLowerCase();
 
   const collection = process.env.FIREBASE_SONGS_COLLECTION || 'songs';
   const songsRef = db.collection(collection);
@@ -77,16 +78,20 @@ async function searchSongs(query) {
   const artistFields = getSearchFields('FIREBASE_SONG_ARTIST_FIELDS', DEFAULT_ARTIST_FIELDS);
 
   for (const field of titleFields) {
-    const snap = await prefixSearchByField(songsRef, field, q);
-    if (!snap.empty) {
-      return snap.docs.map((doc) => normalizeSong(doc));
+    for (const term of getSearchTerms(field, rawQuery, normalizedQuery)) {
+      const snap = await prefixSearchByField(songsRef, field, term);
+      if (!snap.empty) {
+        return snap.docs.map((doc) => normalizeSong(doc));
+      }
     }
   }
 
   for (const field of artistFields) {
-    const snap = await prefixSearchByField(songsRef, field, q);
-    if (!snap.empty) {
-      return snap.docs.map((doc) => normalizeSong(doc));
+    for (const term of getSearchTerms(field, rawQuery, normalizedQuery)) {
+      const snap = await prefixSearchByField(songsRef, field, term);
+      if (!snap.empty) {
+        return snap.docs.map((doc) => normalizeSong(doc));
+      }
     }
   }
 
@@ -109,6 +114,23 @@ function prefixSearchByField(songsRef, field, q) {
     .where(field, '<=', q + '\uf8ff')
     .limit(10)
     .get();
+}
+
+/**
+ * Build query terms for a field.
+ * For "lower"-style fields use a lowercase query, while other fields try
+ * the raw query first and lowercase as fallback.
+ *
+ * @param {string} field
+ * @param {string} rawQuery
+ * @param {string} normalizedQuery
+ * @returns {string[]}
+ */
+function getSearchTerms(field, rawQuery, normalizedQuery) {
+  if (/lower$/i.test(field)) {
+    return [normalizedQuery];
+  }
+  return rawQuery === normalizedQuery ? [rawQuery] : [rawQuery, normalizedQuery];
 }
 
 /**
