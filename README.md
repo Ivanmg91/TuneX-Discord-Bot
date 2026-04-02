@@ -359,7 +359,7 @@ npm start
 
 - Verifica que tus documentos tengan alguno de los campos configurados en `FIREBASE_SONG_TITLE_FIELDS` (por defecto: `title,songName,name,nombre`).
 - Si tus campos usan otro nombre, configúralo en `.env`.
-- Si renombraste canciones recientemente, el bot ahora prueba búsqueda por el texto exacto y en minúsculas en campos normales (ej. `title`) y usa solo minúsculas en campos `*Lower` (ej. `titleLower`), para mejorar compatibilidad con datos nuevos y legacy.
+- Si renombraste canciones recientemente, el bot ahora prueba búsqueda por el texto exacto y en minúsculas en campos normales (ej. `title`) y usa solo minúsculas en campos `*Lower` (ej. `titleLower`), para mejorar compatibilidad con datos nuevos y heredados.
 
 ### `Error: spawn ffmpeg ENOENT`
 
