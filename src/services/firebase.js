@@ -6,6 +6,8 @@ const path = require('path');
 let db;
 let storage;
 let initialized = false;
+const DEFAULT_TITLE_FIELDS = ['title', 'songName', 'name', 'nombre'];
+const DEFAULT_ARTIST_FIELDS = ['artistName', 'artist'];
 
 /**
  * Initialise Firebase Admin SDK.
@@ -43,8 +45,8 @@ function initFirebase() {
  * Search songs in Firestore.
  *
  * Supports two strategies:
- *  1. Prefix search on `title` (case-insensitive by lowercasing the query).
- *  2. Prefix search on `artistName` as fallback.
+ *  1. Prefix search on configurable title fields (`title` by default).
+ *  2. Prefix search on configurable artist fields as fallback.
  *
  * Firestore document structure (TuneX app):
  * {
@@ -66,34 +68,66 @@ function initFirebase() {
  * @returns {Promise<Array<Object>>}
  */
 async function searchSongs(query) {
+  if (!query?.trim()) return [];
   const q = query.toLowerCase().trim();
+
   const collection = process.env.FIREBASE_SONGS_COLLECTION || 'songs';
   const songsRef = db.collection(collection);
+  const titleFields = getSearchFields('FIREBASE_SONG_TITLE_FIELDS', DEFAULT_TITLE_FIELDS);
+  const artistFields = getSearchFields('FIREBASE_SONG_ARTIST_FIELDS', DEFAULT_ARTIST_FIELDS);
 
-  // 1. Prefix search on `title`.
-  // '\uf8ff' is a very high Unicode character that acts as an upper-bound
-  // for Firestore prefix queries — any string starting with `q` will be ≤ `q\uf8ff`.
-  // NOTE: Firestore range queries are case-sensitive. TuneX stores titles in
-  // lowercase (e.g. "mamamovilalcielo"), and we lowercase the query here, so
-  // searches match as long as titles are saved in lowercase in Firestore.
-  const titleSnap = await songsRef
-    .where('title', '>=', q)
-    .where('title', '<=', q + '\uf8ff')
-    .limit(10)
-    .get();
-
-  if (!titleSnap.empty) {
-    return titleSnap.docs.map((doc) => normalizeSong(doc));
+  for (const field of titleFields) {
+    const snap = await prefixSearchByField(songsRef, field, q);
+    if (!snap.empty) {
+      return snap.docs.map((doc) => normalizeSong(doc));
+    }
   }
 
-  // 2. Fallback: prefix search on `artistName`
-  const artistSnap = await songsRef
-    .where('artistName', '>=', q)
-    .where('artistName', '<=', q + '\uf8ff')
+  for (const field of artistFields) {
+    const snap = await prefixSearchByField(songsRef, field, q);
+    if (!snap.empty) {
+      return snap.docs.map((doc) => normalizeSong(doc));
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Prefix search helper for Firestore fields.
+ *
+ * @param {import('firebase-admin').firestore.CollectionReference} songsRef
+ * @param {string} field
+ * @param {string} q
+ * @returns {Promise<import('firebase-admin').firestore.QuerySnapshot>}
+ */
+function prefixSearchByField(songsRef, field, q) {
+  // '\uf8ff' is a very high Unicode character that acts as an upper-bound
+  // for Firestore prefix queries — any string starting with `q` will be ≤ `q\uf8ff`.
+  return songsRef
+    .where(field, '>=', q)
+    .where(field, '<=', q + '\uf8ff')
     .limit(10)
     .get();
+}
 
-  return artistSnap.docs.map((doc) => normalizeSong(doc));
+/**
+ * Read a comma-separated list of field names from env, with defaults.
+ *
+ * @param {string} envVarName
+ * @param {string[]} fallback
+ * @returns {string[]}
+ */
+function getSearchFields(envVarName, fallback) {
+  const raw = process.env[envVarName];
+  if (!raw) return fallback;
+
+  const parsed = raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parsed.length > 0 ? parsed : fallback;
 }
 
 /**
@@ -105,9 +139,14 @@ async function searchSongs(query) {
  */
 function normalizeSong(doc) {
   const data = doc.data();
+  const title = DEFAULT_TITLE_FIELDS
+    .map((field) => data[field])
+    .find((value) => typeof value === 'string' && value.trim().length > 0) || 'Desconocido';
+
   return {
     id: doc.id,
     ...data,
+    title,
     // Map TuneX field names → bot field names.
     // `artistName` is the TuneX field; `artist` fallback covers any future migration.
     artist: data.artistName || data.artist || 'Desconocido',
