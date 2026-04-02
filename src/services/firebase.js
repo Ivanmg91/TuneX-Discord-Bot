@@ -6,6 +6,8 @@ const path = require('path');
 let db;
 let storage;
 let initialized = false;
+const DEFAULT_TITLE_FIELDS = ['title', 'songName', 'name', 'nombre'];
+const DEFAULT_ARTIST_FIELDS = ['artistName', 'artist'];
 
 /**
  * Initialise Firebase Admin SDK.
@@ -66,13 +68,13 @@ function initFirebase() {
  * @returns {Promise<Array<Object>>}
  */
 async function searchSongs(query) {
+  if (!query?.trim()) return [];
   const q = query.toLowerCase().trim();
-  if (!q) return [];
 
   const collection = process.env.FIREBASE_SONGS_COLLECTION || 'songs';
   const songsRef = db.collection(collection);
-  const titleFields = getSearchFields('FIREBASE_SONG_TITLE_FIELDS', ['title', 'songName', 'name', 'nombre']);
-  const artistFields = getSearchFields('FIREBASE_SONG_ARTIST_FIELDS', ['artistName', 'artist']);
+  const titleFields = getSearchFields('FIREBASE_SONG_TITLE_FIELDS', DEFAULT_TITLE_FIELDS);
+  const artistFields = getSearchFields('FIREBASE_SONG_ARTIST_FIELDS', DEFAULT_ARTIST_FIELDS);
 
   for (const field of titleFields) {
     const snap = await prefixSearchByField(songsRef, field, q);
@@ -97,6 +99,7 @@ async function searchSongs(query) {
  * @param {import('firebase-admin').firestore.CollectionReference} songsRef
  * @param {string} field
  * @param {string} q
+ * @returns {Promise<import('firebase-admin').firestore.QuerySnapshot>}
  */
 function prefixSearchByField(songsRef, field, q) {
   // '\uf8ff' is a very high Unicode character that acts as an upper-bound
@@ -136,10 +139,14 @@ function getSearchFields(envVarName, fallback) {
  */
 function normalizeSong(doc) {
   const data = doc.data();
+  const title = DEFAULT_TITLE_FIELDS
+    .map((field) => data[field])
+    .find((value) => typeof value === 'string' && value.trim().length > 0) || 'Desconocido';
+
   return {
     id: doc.id,
     ...data,
-    title: data.title || data.songName || data.name || data.nombre || 'Desconocido',
+    title,
     // Map TuneX field names → bot field names.
     // `artistName` is the TuneX field; `artist` fallback covers any future migration.
     artist: data.artistName || data.artist || 'Desconocido',
